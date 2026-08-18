@@ -10,6 +10,7 @@ import { execute as createProjectExecute } from '../tools/project-create.js';
 import { getConfig, agentIds, agentList } from '../lib/config.js';
 import { setupStations } from '../lib/stations.js';
 import { autoRegister } from '../lib/scan.js';
+import { isValidWorkDir } from '../lib/path.js';
 import { readFileSync, existsSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, extname, basename, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -23,7 +24,7 @@ function getCtx(c, fallbackCtx) {
 function json(c, obj, status) {
   return new Response(JSON.stringify(obj), {
     status: status || 200,
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    headers: secHeaders({ 'Content-Type': 'application/json; charset=utf-8' }),
   });
 }
 
@@ -44,6 +45,29 @@ function contentTypeFor(filePath) {
   const ext = extname(filePath).toLowerCase();
   return CONTENT_TYPES[ext] || 'application/octet-stream';
 }
+
+// 最小安全响应头：统一加在 json() 与页面/文件响应上
+function secHeaders(extra) {
+  return Object.assign({}, extra || {}, {
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+  });
+}
+
+// 导入扩展名白名单。拒绝策略：未见于 SAVE_TYPES 的类型一律 400；
+// svg/html/xml/js/css/exe 等预览炸弹或代码刻意不入表（拒绝）。
+const SAVE_TYPES = {
+  'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp', 'bmp': 'image/bmp',
+  'mp4': 'video/mp4', 'webm': 'video/webm', 'mov': 'video/quicktime', 'm4v': 'video/x-m4v',
+  'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'aac': 'audio/aac', 'm4a': 'audio/mp4',
+  'pdf': 'application/pdf',
+  'txt': 'text/plain', 'md': 'text/markdown', 'csv': 'text/csv', 'json': 'application/json',
+  'zip': 'application/zip',
+};
+const MAX_IMPORT_BYTES = 200 * 1024 * 1024;                 // 200MB 二进制上限
+const MAX_IMPORT_BASE64 = Math.ceil(MAX_IMPORT_BYTES / 3) * 4 + 4; // base64 文本长度上限
+
+
 
 // 工位 agent 白名单来自用户配置（manifest configuration），不硬编码
 async function validAgentIds(pluginCtx) {
@@ -256,7 +280,10 @@ export function registerApiRoutes(app, ctx) {
     const project = loadProject(dataDir, projectId);
     if (!project) return json(c, { ok: false, error: '项目不存在' }, 404);
 
-    project.workDir = String(workDir).trim();
+    const chk = isValidWorkDir(String(workDir).trim(), dataDir);
+    if (!chk.ok) return json(c, { ok: false, error: '工作台路径非法: ' + chk.reason }, 400);
+
+    project.workDir = chk.value;
     project.updatedAt = new Date().toISOString();
     saveProject(dataDir, project);
     return json(c, { ok: true, workDir: project.workDir });
@@ -282,6 +309,16 @@ export function registerApiRoutes(app, ctx) {
     if (String(name).includes('..')) {
       return json(c, { ok: false, error: '文件名非法' }, 400);
     }
+    // base64 合法性：字符串、长度 4 的倍数、仅含合法 base64 字符、大小不超上限
+    if (typeof dataBase64 !== 'string' || dataBase64.length === 0) {
+      return json(c, { ok: false, error: 'dataBase64 非法' }, 400);
+    }
+    if (dataBase64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(dataBase64)) {
+      return json(c, { ok: false, error: 'dataBase64 格式非法' }, 400);
+    }
+    if (dataBase64.length > MAX_IMPORT_BASE64) {
+      return json(c, { ok: false, error: '文件过大（上限 200MB）' }, 400);
+    }
 
     const project = loadProject(dataDir, projectId);
     if (!project) return json(c, { ok: false, error: '项目不存在' }, 404);
@@ -293,7 +330,16 @@ export function registerApiRoutes(app, ctx) {
       return json(c, { ok: false, error: '文件名非法' }, 400);
     }
     const safeRel = relSegs.join('/');
+    // 扩展名白名单：未知/预览炸弹（html/svg/xml/js/css 等）一律 400
+    const ext = extname(safeRel).toLowerCase().replace(/^\./, '');
+    if (!SAVE_TYPES[ext]) {
+      return json(c, { ok: false, error: '文件类型不允许导入: .' + ext + '（仅支持图片/视频/音频/PDF/文本/JSON/ZIP）' }, 400);
+    }
     const target = join(root, ...relSegs);
+    // 写盘前断言：resolve 后仍位于项目根（workDir 或 dataDir/projects/{id}）之内
+    if (!resolve(target).startsWith(resolve(root))) {
+      return json(c, { ok: false, error: '目标路径越界' }, 400);
+    }
 
     try {
       mkdirSync(resolve(target, '..'), { recursive: true });
@@ -510,15 +556,24 @@ export function registerApiRoutes(app, ctx) {
     if (!fullPath) return json(c, { ok: false, error: '文件不存在: ' + artifactPath }, 404);
 
     try {
+      const ext = extname(fullPath).toLowerCase();
+      // 仅安全类型内联回吐；svg/html/xml/js/css 等一律改为附件下载（防预览炸弹/脚本执行）
+      const INLINE_EXT = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp',
+        '.mp4', '.webm', '.mov', '.m4v', '.mp3', '.wav', '.aac', '.m4a',
+        '.pdf', '.txt', '.md', '.csv', '.json'];
       const ct = contentTypeFor(fullPath);
-      const isText = ct.startsWith('text/') || ct === 'application/json' || ct === 'text/javascript';
+      const isText = ct.startsWith('text/') || ct === 'application/json';
+      const headers = secHeaders({ 'Content-Type': ct + (isText ? '; charset=utf-8' : '') });
+      if (INLINE_EXT.indexOf(ext) < 0) {
+        headers['Content-Disposition'] = 'attachment; filename="' + String(basename(fullPath)).replace(/"/g, '') + '"';
+      }
       if (isText) {
         const text = readFileSync(fullPath, 'utf-8');
-        return new Response(text, { headers: { 'Content-Type': ct + '; charset=utf-8' } });
+        return new Response(text, { headers });
       }
       // 二进制文件：整文件读取（Hono 路由不支持 stream 直传，用 buffer 代替）
       const buffer = readFileSync(fullPath);
-      return new Response(buffer, { headers: { 'Content-Type': ct } });
+      return new Response(buffer, { headers });
     } catch (e) {
       return json(c, { ok: false, error: '读取失败: ' + (e && e.message ? e.message : String(e)) }, 500);
     }

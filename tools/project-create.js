@@ -4,6 +4,7 @@
 import { loadIndex, saveIndex, saveProject, DEFAULT_STAGES } from '../lib/store.js';
 import { loadPipelineStages } from '../lib/pipelines.js';
 import { getConfig, roleToAgent } from '../lib/config.js';
+import { isValidWorkDir } from '../lib/path.js';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -61,6 +62,14 @@ export async function execute(input, ctx) {
   const now = new Date().toISOString();
   const projectId = 'p_' + randomUUID().slice(0, 8);
 
+  // 安全线：工作台路径校验（拒绝相对/系统目录/dataDir 本体及其上级/8.3 短名）
+  let workDir = (input.workDir || '').trim();
+  if (workDir) {
+    const chk = isValidWorkDir(workDir, dataDir);
+    if (!chk.ok) return reply({ ok: false, error: "工作台路径非法: " + chk.reason });
+    workDir = chk.value;
+  }
+
   // 用户配置：仓库路径 + 三个工位 agent id
   const cfg = await getConfig(ctx);
 
@@ -85,7 +94,7 @@ export async function execute(input, ctx) {
     brief: input.brief,
     pipelineId,
     audience: input.audience || '',
-    workDir: (input.workDir || '').trim(),
+    workDir: workDir,
     currentStageId: stages[0].stageId,
     stages: stages.map((s, i) => ({
       stageId: s.stageId,

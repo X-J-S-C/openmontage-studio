@@ -3,7 +3,8 @@
 // version 规则：同 stage 同 path 已存在则 +1（重写场景），否则 1
 
 import { loadProject, saveProject } from '../lib/store.js';
-import { randomUUID } from 'node:crypto';
+import { sanitizeRelPath } from '../lib/path.js';
+import { registerArtifact } from '../lib/artifacts.js';
 
 export const name = 'artifact_register';
 export const description =
@@ -39,28 +40,18 @@ export async function execute(input, ctx) {
   if (!project) {
     return reply({ ok: false, error: '项目不存在: ' + input.projectId });
   }
-  const stage = (project.stages || []).find((s) => s.stageId === input.stageId);
-  if (!stage) {
-    return reply({ ok: false, error: '阶段不存在: ' + input.stageId });
+  // 安全线：校验登记路径，拒绝目录穿越/绝对路径/空段
+  const safePath = sanitizeRelPath(input.path);
+  if (!safePath) {
+    return reply({ ok: false, error: '工件路径非法（拒绝目录穿越/绝对路径/空段）: ' + input.path });
   }
-  if (!Array.isArray(stage.artifacts)) stage.artifacts = [];
 
-  // version：同 stage 同 path 已存在 → +1，否则 1
-  const same = stage.artifacts.filter((a) => a.path === input.path);
-  const version = same.length > 0 ? Math.max(...same.map((a) => a.version || 1)) + 1 : 1;
-
-  const artifact = {
-    id: 'a_' + randomUUID().slice(0, 8),
-    type: input.type,
-    path: input.path,
-    version,
-    stageId: input.stageId,
-    title: input.title || input.path.split('/').pop(),
-    createdAt: new Date().toISOString(),
-  };
-  stage.artifacts.push(artifact);
-  project.updatedAt = new Date().toISOString();
+  // 共享登记逻辑：同 stage 同 path → version+1
+  const result = registerArtifact(project, input.stageId, safePath, input.type, input.title);
+  if (!result.ok) {
+    return reply(result);
+  }
   saveProject(dataDir, project);
 
-  return reply({ ok: true, artifact });
+  return reply({ ok: true, artifact: result.artifact });
 }

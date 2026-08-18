@@ -6,7 +6,7 @@
 
   var HOST_PROTOCOL = 'hana.plugin.ui';
   var HOST_VERSION = 1;
-  var hostOrigin = '*';
+  var hostOrigin = (window.location && window.location.origin) || '';  // 缺省收紧为父窗口同源；优先 hana-host-origin，其次 referrer
   (function resolveHostOrigin() {
     try {
       var q = new URLSearchParams(window.location.search);
@@ -15,7 +15,7 @@
       if (document.referrer) {
         hostOrigin = new URL(document.referrer).origin;
       }
-    } catch (e) { /* 保持 * */ }
+    } catch (e) { /* 保持缺省同源 */ }
   })();
 
   function post(type, payload) {

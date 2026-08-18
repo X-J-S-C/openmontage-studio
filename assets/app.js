@@ -89,7 +89,7 @@
   }
   var API = baseUrl();
 
-  function authQuery() {
+  function surfaceSession() {
     var surface = '';
     try {
       var params = new URLSearchParams(window.location.search);
@@ -98,12 +98,31 @@
         surface = sessionStorage.getItem('pluginSurfaceSession') || '';
       }
     } catch (e) { /* 环境异常则视为无凭证 */ }
-    return surface ? 'pluginSurfaceSession=' + encodeURIComponent(surface) : '';
+    return surface;
   }
+  function authQuery() {
+    var s = surfaceSession();
+    return s ? 'pluginSurfaceSession=' + encodeURIComponent(s) : '';
+  }
+  // withAuth：仅用于无法自定义请求头的资源直链（<img>/<video> 预览）。
+  // 凭证仍走 query（宿主同时接受 header 与 query），避免预览因缺凭证 403。
   function withAuth(url) {
     var q = authQuery();
     if (!q) return url;
     return url + (url.indexOf('?') >= 0 ? '&' : '?') + q;
+  }
+  // fetch 请求：凭证走请求头 X-Hana-Plugin-Surface-Session，避免 token 进入 URL
+  // （减少 access log / referrer / 历史记录中的凭证泄漏）。宿主 header 优先。
+  function withAuthHeaders(opts) {
+    var o = Object.assign({}, opts || {});
+    var headers = Object.assign({}, o.headers || {});
+    var s = surfaceSession();
+    if (s) headers['X-Hana-Plugin-Surface-Session'] = s;
+    o.headers = headers;
+    return o;
+  }
+  function authFetch(url, opts) {
+    return fetch(url, withAuthHeaders(opts));
   }
 
   // 宿主桥接探测：手册记载官方方式为 window.hana.api.fetch（自动带凭证）
@@ -130,7 +149,7 @@
   }
   function fallbackWrite(path, options, info) {
     var p = new Promise(function (resolve) {
-      fetch(withAuth(API + path), options)
+      authFetch(API + path, options)
         .then(function (r) { return r.json().catch(function () { return { httpStatus: r.status }; }); })
         .then(function (d) { resolve(Object.assign({ _fallback: true, _hana: info }, d)); })
         .catch(function (e) { resolve({ _fallback: true, _hana: info, _fetchError: e.message }); });
@@ -153,7 +172,7 @@
     var box = $('tabs');
     if (!box) return;
     box.innerHTML = AGENTS.map(function (a) {
-      return '<button class="tab' + (a.id === currentAgent ? ' on' : '') + '" data-agent="' + a.id + '">' + a.name + '</button>';
+      return '<button class="tab' + (a.id === currentAgent ? ' on' : '') + '" data-agent="' + esc(a.id) + '">' + esc(a.name) + '</button>';
     }).join('');
     box.querySelectorAll('.tab').forEach(function (btn) {
       btn.addEventListener('click', function () { switchTab(btn.getAttribute('data-agent')); });
@@ -197,7 +216,7 @@
   // ── 工件库 ──
   function loadArtifacts() {
     if (!PROJECT_ID) return;
-    fetch(withAuth(API + '/api/artifacts?projectId=' + encodeURIComponent(PROJECT_ID)))
+    authFetch(API + '/api/artifacts?projectId=' + encodeURIComponent(PROJECT_ID))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.ok) renderArtifacts(d.artifacts || []);
@@ -276,7 +295,7 @@
   }
 
   function deliverAll() {
-    fetch(withAuth(API + '/api/artifacts?projectId=' + encodeURIComponent(PROJECT_ID)))
+    authFetch(API + '/api/artifacts?projectId=' + encodeURIComponent(PROJECT_ID))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         var list = (d.ok && d.artifacts) || [];
@@ -328,15 +347,17 @@
     mask.classList.add('open');
     animateModalOpen(mask);
     var ext = (path.split('.').pop() || '').toLowerCase();
-    var url = withAuth(API + '/api/artifact/read?projectId=' + encodeURIComponent(PROJECT_ID) + '&path=' + encodeURIComponent(path));
-    var imgExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
-    var videoExts = ['mp4', 'webm', 'mov'];
+    var params = '?projectId=' + encodeURIComponent(PROJECT_ID) + '&path=' + encodeURIComponent(path);
+    var readUrl = API + '/api/artifact/read' + params;
+    // <img>/<video> 直链无法设置请求头，凭证走 query（宿主两者皆收）；fetch 走 header
+    var imgExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'];
+    var videoExts = ['mp4', 'webm', 'mov', 'm4v'];
     if (imgExts.indexOf(ext) >= 0) {
-      body.innerHTML = '<img src="' + url + '" alt="' + esc(path) + '">';
+      body.innerHTML = '<img src="' + withAuth(readUrl) + '" alt="' + esc(path) + '">';
     } else if (videoExts.indexOf(ext) >= 0) {
-      body.innerHTML = '<video src="' + url + '" controls></video>';
+      body.innerHTML = '<video src="' + withAuth(readUrl) + '" controls></video>';
     } else {
-      fetch(url)
+      authFetch(readUrl)
         .then(function (r) { return r.text(); })
         .then(function (t) {
           body.innerHTML = '<pre>' + esc(t.slice(0, 20000)) + '</pre>';
@@ -355,7 +376,7 @@
     if (!PROJECT_ID) return;
     var box = $('threadText');
     if (!silent && box) box.classList.add('thinking');
-    fetch(withAuth(API + '/api/thread?projectId=' + encodeURIComponent(PROJECT_ID) + '&agentId=' + encodeURIComponent(agentId)))
+    authFetch(API + '/api/thread?projectId=' + encodeURIComponent(PROJECT_ID) + '&agentId=' + encodeURIComponent(agentId))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.ok) { renderError(d.error || '加载失败', d.hint); return; }
@@ -377,7 +398,7 @@
     var box = $('threadText');
     if (box) box.classList.add('thinking');
 
-    fetch(withAuth(API + '/api/thread/message'), {
+    authFetch(API + '/api/thread/message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectId: PROJECT_ID, agentId: currentAgent, text: text }),
@@ -409,7 +430,7 @@
   // ── 执行面板 ──
   function loadTasks() {
     if (!PROJECT_ID) return;
-    fetch(withAuth(API + '/api/tasks?projectId=' + encodeURIComponent(PROJECT_ID)))
+    authFetch(API + '/api/tasks?projectId=' + encodeURIComponent(PROJECT_ID))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.ok) renderTasks(d.tasks || []);
@@ -465,7 +486,7 @@
 
   // ── 阶段详情（验收意见 + 工件）──
   function showStageDetail(stageId) {
-    fetch(withAuth(API + '/api/project?projectId=' + encodeURIComponent(PROJECT_ID)))
+    authFetch(API + '/api/project?projectId=' + encodeURIComponent(PROJECT_ID))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.ok || !d.project) return;
@@ -562,7 +583,7 @@
   // 能力授权：manifest page.hostCapabilities 声明（如 resource.pick）
   var HOST_PROTOCOL = 'hana.plugin.ui';
   var HOST_VERSION = 1;
-  var hostOrigin = '*';  // 优先 hana-host-origin，其次 referrer，兜底 *
+  var hostOrigin = (window.location && window.location.origin) || '';  // 缺省收紧为父窗口同源；优先 hana-host-origin，其次 referrer
   (function resolveHostOrigin() {
     try {
       var q = new URLSearchParams(window.location.search);
@@ -572,7 +593,7 @@
         var u = new URL(document.referrer);
         hostOrigin = u.origin;
       }
-    } catch (e) { /* 保持 * */ }
+    } catch (e) { /* 保持缺省同源 */ }
   })();
 
   function pluginUiRequest(type, payload) {
@@ -782,7 +803,7 @@
 
   // ── 新建项目 ──
   function loadPipelines() {
-    fetch(withAuth(API + '/api/pipelines'))
+    authFetch(API + '/api/pipelines')
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.ok || !d.pipelines || !d.pipelines.length) return;
@@ -826,14 +847,11 @@
         if (d.ok && d.project && d.project.id) {
           gotoProject(d.project.id);
         } else {
-          // 诊断：失败时显示完整信息，帮助定位鉴权问题
-          var info = d._hana || hanaApiInfo();
-          var diag = 'host桥接: ' + (info.hasFetch ? '有' : (info.hasHana ? '有hana无fetch' : '无')) +
-            '\n请求: ' + withAuth(API + reqPath) +
-            '\n响应: ' + JSON.stringify(d).slice(0, 300) +
-            '\ncookie: ' + (document.cookie || '(空)') +
-            '\nurl: ' + window.location.href;
-          alertInline(d.error || (d._fetchError ? '网络错误: ' + d._fetchError : '创建失败') + '\n' + diag);
+          // 诊断：只打印错误文本与 HTTP 状态，不打印含凭证的 URL / location / cookie
+          alertInline(
+            (d.error || (d._fetchError ? '网络错误: ' + d._fetchError : '创建失败')) +
+            (d.httpStatus ? '（HTTP ' + d.httpStatus + '）' : '')
+          );
           btn.disabled = false;
           btn.textContent = '创建项目';
         }
@@ -863,13 +881,16 @@
 
   // ── 启动 ──
   function init() {
-    // 环境诊断（始终显示，定位鉴权环境用）
+    // 环境诊断（仅当 URL 带 OMSTUDIO_DEBUG=1 时显示；不打印 cookie 明文与整段 location.search）
     try {
-      var diagEl = document.createElement('div');
-      diagEl.id = 'envDiag';
-      diagEl.style.cssText = 'font-size:11px;line-height:1.5;color:#8a7f6f;background:#f2eee4;border-bottom:1px dashed #d8cfc0;padding:4px 14px;font-family:monospace;word-break:break-all;';
-      diagEl.textContent = 'ENV: search=' + window.location.search.slice(0, 160) + ' | cookie=' + (document.cookie || '(空)') + ' | hana=' + (window.hana ? '有' : '无') + ' | path=' + window.location.pathname;
-      document.body.insertBefore(diagEl, document.body.firstChild);
+      var dbg = new URLSearchParams(window.location.search).get('OMSTUDIO_DEBUG');
+      if (dbg === '1') {
+        var diagEl = document.createElement('div');
+        diagEl.id = 'envDiag';
+        diagEl.style.cssText = 'font-size:11px;line-height:1.5;color:#8a7f6f;background:#f2eee4;border-bottom:1px dashed #d8cfc0;padding:4px 14px;font-family:monospace;word-break:break-all;';
+        diagEl.textContent = 'ENV | hana: ' + (window.hana ? '有' : '无') + ' | path: ' + window.location.pathname + ' | session: ' + (surfaceSession() ? '有' : '无');
+        document.body.insertBefore(diagEl, document.body.firstChild);
+      }
     } catch (e) { /* 诊断失败不影响 */ }
     renderTabs();
     loadPipelines();

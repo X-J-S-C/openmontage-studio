@@ -40,6 +40,23 @@ function esc(s) {
   })[ch]);
 }
 
+// 内联 <script> JSON 注入安全化：把 < 与 U+2028/U+2029 转义为 JSON 字面转义序列，
+// 防止数据中的 </script> 提前闭合标签造成存储型 XSS
+function jsSafe(obj) {
+  return JSON.stringify(obj)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+// 最小安全响应头：统一加在页面/静态资源响应上
+function secHeaders(extra) {
+  return Object.assign({}, extra || {}, {
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+  });
+}
+
 const STATUS_LABEL = { '待料': '待料', '进行中': '进行中', '待验': '待验', '已交付': '已交付' };
 
 function renderFilmStrip(stages, currentStageId) {
@@ -69,10 +86,10 @@ export default function registerRoutes(app, ctx) {
       try {
         return new Response(JSON.stringify({ error: err && err.message ? err.message : '内部错误' }), {
           status: 500,
-          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          headers: secHeaders({ 'Content-Type': 'application/json; charset=utf-8' }),
         });
       } catch (e2) {
-        return new Response('internal-error', { status: 500 });
+        return new Response('internal-error', { status: 500, headers: secHeaders({}) });
       }
     });
   } catch (e) { /* onError 注册失败不影响 */ }
@@ -80,7 +97,7 @@ export default function registerRoutes(app, ctx) {
   // GSAP 静态资源（服务端渲染页面经由相对路径引用）
   app.get('/montage/gsap.min.js', (c) => {
     return new Response(GSAP_JS, {
-      headers: { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600' },
+      headers: secHeaders({ 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }),
     });
   });
 
@@ -165,7 +182,7 @@ export default function registerRoutes(app, ctx) {
 </html>`;
 
     return new Response(html, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      headers: secHeaders({ 'Content-Type': 'text/html; charset=utf-8' }),
     });
   });
   app.get('/montage', async (c) => {
@@ -694,9 +711,9 @@ ${themeLink}
     <div id="execList"><div class="exec-empty">载入中…</div></div>
   </div>
 
-  <script>window.PROJECT_ID = ${JSON.stringify(project.id)};</script>
-  <script>window.PROJECTS = ${JSON.stringify(projects.map((p) => ({ id: p.id, title: p.title, pipelineId: p.pipelineId, updatedAt: p.updatedAt })))};</script>
-  <script>window.AGENTS = ${JSON.stringify(agents)};</script>
+  <script>window.PROJECT_ID = ${jsSafe(project.id)};</script>
+  <script>window.PROJECTS = ${jsSafe(projects.map((p) => ({ id: p.id, title: p.title, pipelineId: p.pipelineId, updatedAt: p.updatedAt })))};</script>
+  <script>window.AGENTS = ${jsSafe(agents)};</script>
   <script>${loadAppJs()}</script>
   ` : `
   <div class="empty-state">
@@ -708,7 +725,7 @@ ${themeLink}
 </html>`;
 
     return new Response(html, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      headers: secHeaders({ 'Content-Type': 'text/html; charset=utf-8' }),
     });
   });
 

@@ -3,9 +3,10 @@
 // 与页面「导入文件」按钮共用同一能力：agent 侧入口。
 
 import { loadProject, saveProject } from '../lib/store.js';
+import { sanitizeRelPath } from '../lib/path.js';
+import { registerArtifact } from '../lib/artifacts.js';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
-import { randomUUID } from 'node:crypto';
 
 export const name = 'file_import';
 export const description =
@@ -57,6 +58,10 @@ export async function execute(input, ctx) {
 
   const root = projectRoot(project, dataDir);
   const rel = input.targetPath || basename(source);
+  // 安全线：目标相对路径再经统一校验（拒绝 .. / 绝对路径 / 空段）
+  if (!sanitizeRelPath(rel)) {
+    return reply({ ok: false, error: '目标路径非法（含 .. 目录穿越或绝对路径）: ' + rel });
+  }
   const target = safeJoin(root, rel);
   if (!target) return reply({ ok: false, error: '目标路径非法（含 .. 目录穿越）' });
   if (target === source) return reply({ ok: false, error: '源与目标相同，无需导入' });
@@ -68,23 +73,16 @@ export async function execute(input, ctx) {
     return reply({ ok: false, error: '复制失败: ' + (e && e.message ? e.message : String(e)) });
   }
 
-  // 登记工件到当前阶段
+  // 登记工件到当前阶段（共享登记逻辑：同 stage 同 path → version+1）
   const stage = project.stages.find((s) => s.stageId === project.currentStageId) || project.stages[0];
-  if (!Array.isArray(stage.artifacts)) stage.artifacts = [];
-  const same = stage.artifacts.filter((a) => a.path === rel);
-  const version = same.length > 0 ? Math.max(...same.map((a) => a.version || 1)) + 1 : 1;
-  const artifact = {
-    id: 'a_' + randomUUID().slice(0, 8),
-    type: input.type || 'asset',
-    path: rel,
-    version,
-    stageId: stage.stageId,
-    title: input.title || basename(rel),
-    createdAt: new Date().toISOString(),
-  };
-  stage.artifacts.push(artifact);
-  project.updatedAt = new Date().toISOString();
+  if (!stage) {
+    return reply({ ok: false, error: '项目暂无阶段可登记，无法导入' });
+  }
+  const result = registerArtifact(project, stage.stageId, rel, input.type || 'asset', input.title || basename(rel));
+  if (!result.ok) {
+    return reply(result);
+  }
   saveProject(dataDir, project);
 
-  return reply({ ok: true, artifact, projectRoot: root, copiedTo: target });
+  return reply({ ok: true, artifact: result.artifact, projectRoot: root, copiedTo: target });
 }
