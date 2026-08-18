@@ -412,6 +412,7 @@
       .then(function (d) {
         if (!d.ok) { renderError(d.error || '发送失败', d.hint); }
         else if (d.rebuilt) { hostToast('工位会话已自动重建', 'success'); }
+        else if (d.retried) { hostToast('宿主繁忙，消息已自动重试成功', 'info'); }
         busy = false;
         btn.disabled = false;
         btn.textContent = '发送';
