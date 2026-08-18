@@ -1,0 +1,17 @@
+{
+  "name": "openmontage-studio",
+  "version": "0.4.11",
+  "description": "视频全流程流水线工作台：编导制三工位同屏，pipeline 驱动的工序状态机、工件库与执行面板。",
+  "type": "module",
+  "main": "index.js",
+  "private": false,
+  "license": "MIT",
+  "keywords": [
+    "hana",
+    "openhanako",
+    "plugin",
+    "video",
+    "pipeline",
+    "studio"
+  ]
+}

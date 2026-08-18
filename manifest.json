@@ -1,0 +1,72 @@
+{
+  "manifestVersion": 1,
+  "id": "openmontage-studio",
+  "name": "OpenMontage Studio",
+  "version": "0.4.11",
+  "description": "视频全流程流水线工作台：编导制三工位同屏，pipeline 驱动的工序状态机、工件库与执行面板。",
+  "minAppVersion": "0.171.3",
+  "trust": "full-access",
+  "activationEvents": ["onStartup"],
+  "capabilities": ["session", "resource.read", "resource.materialize", "resource.write", "agent.read", "agent.write"],
+  "sensitiveCapabilities": ["filesystem.write"],
+  "ui": {
+    "hostCapabilities": ["resource.pick", "resource.open"]
+  },
+  "contributes": {
+    "page": {
+      "title": {
+        "zh": "视频工坊",
+        "en": "OpenMontage Studio"
+      },
+      "route": "/montage",
+      "icon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 5h13a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z\"/><path d=\"M18 9l4-2.5v11L18 15\"/></svg>"
+    },
+    "widget": {
+      "title": {
+        "zh": "视频工作台",
+        "en": "OpenMontage"
+      },
+      "icon": "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 5h13a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z\"/><path d=\"M18 9l4-2.5v11L18 15\"/></svg>",
+      "route": "/sidebar"
+    },
+    "configuration": {
+      "properties": {
+        "openmontageRepoPath": {
+          "type": "string",
+          "title": "OpenMontage 仓库路径",
+          "description": "OpenMontage-repo 的绝对路径（含 pipeline_defs 目录）；可选，留空时使用内置默认工序。",
+          "default": "",
+          "ui": { "control": "text" }
+        },
+        "deskDeliverDir": {
+          "type": "string",
+          "title": "工作台投递目录",
+          "description": "投递工件到桌面端工作台的目标目录；留空时自动探测 Hana 工作台目录。",
+          "default": "",
+          "ui": { "control": "text" }
+        },
+        "agentScript": {
+          "type": "string",
+          "title": "编剧工位 Agent",
+          "description": "负责剧本/分镜工序的 agent id，默认 bianju。",
+          "default": "bianju",
+          "ui": { "control": "text" }
+        },
+        "agentDirector": {
+          "type": "string",
+          "title": "导演工位 Agent",
+          "description": "负责需求/审片/验收的 agent id，默认 daoyan。",
+          "default": "daoyan",
+          "ui": { "control": "text" }
+        },
+        "agentMaker": {
+          "type": "string",
+          "title": "制作工位 Agent",
+          "description": "负责素材/剪辑/合成/交付的 agent id，默认 zhizuo。",
+          "default": "zhizuo",
+          "ui": { "control": "text" }
+        }
+      }
+    }
+  }
+}

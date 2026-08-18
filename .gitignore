@@ -1,0 +1,13 @@
+# runtime data
+data/
+*.local
+
+# env & credentials
+.env
+.env.*
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
