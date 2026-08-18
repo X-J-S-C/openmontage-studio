@@ -380,10 +380,14 @@
     authFetch(API + '/api/thread?projectId=' + encodeURIComponent(PROJECT_ID) + '&agentId=' + encodeURIComponent(agentId))
       .then(function (r) { return r.json(); })
       .then(function (d) {
+        // silent 轮询：失败或会话暂不可读时保留已有显示，不覆盖消息区（防“显示一下又消失”）
+        if (silent && (!d.ok || !d.text)) return;
         if (!d.ok) { renderError(d.error || '加载失败', d.hint); return; }
         renderThread(d);
       })
-      .catch(function (e) { renderError('请求失败: ' + e.message); });
+      .catch(function (e) {
+        if (!silent) renderError('请求失败: ' + e.message);
+      });
   }
 
   function sendMessage() {

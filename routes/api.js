@@ -194,14 +194,11 @@ export function registerApiRoutes(app, ctx) {
       const { messageCount, text } = formatMessages(got);
       return json(c, { ok: true, sessionId, messageCount, text, agentId });
     } catch (e) {
+      // 读取失败不删线程、不自愈：轮询场景下宿主偶发失败（如 session-meta 过大）
+      // 误删会把还活着的会话清掉，造成“消息显示一下又消失”。
+      // 真正失效的线程由发送路径（POST /api/thread/message）自愈重建。
       const msg = e && e.message ? String(e.message) : String(e);
-      if (/not\s*found/i.test(msg)) {
-        // 会话引用的 agent 未加载/失效：清掉线程记录，前端显示空态，下次发送时自动重建
-        if (project.threads) delete project.threads[agentId];
-        try { saveProject(dataDir, project); } catch { /* 保存失败不阻断 */ }
-        return json(c, { ok: true, sessionId: null, messageCount: 0, text: '', agentId, rebuilt: true });
-      }
-      return json(c, { ok: false, error: '会话读取失败: ' + msg });
+      return json(c, { ok: false, error: '会话读取失败: ' + msg, keepSession: true });
     }
   });
 
