@@ -11,6 +11,7 @@ import { getConfig, agentIds, agentList } from '../lib/config.js';
 import { setupStations } from '../lib/stations.js';
 import { autoRegister } from '../lib/scan.js';
 import { isValidWorkDir } from '../lib/path.js';
+import { registerArtifact } from '../lib/artifacts.js';
 import { readFileSync, existsSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, extname, basename, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -348,21 +349,13 @@ export function registerApiRoutes(app, ctx) {
       return json(c, { ok: false, error: '写入失败: ' + (e && e.message ? e.message : String(e)) }, 500);
     }
 
-    // 登记工件到当前阶段
+    // 登记工件到当前阶段（共享登记逻辑：同 stage 同 path → version+1）
     const stage = project.stages.find((s) => s.stageId === project.currentStageId) || project.stages[0];
-    if (!Array.isArray(stage.artifacts)) stage.artifacts = [];
-    const same = stage.artifacts.filter((a) => a.path === safeRel);
-    const version = same.length > 0 ? Math.max(...same.map((a) => a.version || 1)) + 1 : 1;
-    const artifact = {
-      id: 'a_' + randomUUID().slice(0, 8),
-      type: type || 'asset',
-      path: safeRel,
-      version,
-      stageId: stage.stageId,
-      title: title || basename(safeRel),
-      createdAt: new Date().toISOString(),
-    };
-    stage.artifacts.push(artifact);
+    const reg = registerArtifact(project, stage ? stage.stageId : null, safeRel, type || 'asset', title || basename(safeRel));
+    if (!reg.ok) {
+      return json(c, { ok: false, error: reg.error || '登记失败' }, 500);
+    }
+    const artifact = reg.artifact;
     project.updatedAt = new Date().toISOString();
     saveProject(dataDir, project);
 
