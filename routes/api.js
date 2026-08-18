@@ -363,7 +363,7 @@ export function registerApiRoutes(app, ctx) {
     if (!base) {
       return json(c, {
         ok: false,
-        error: '未找到工作台目录（自动探测返回 ' + (probeStatus || '空') + '）。请到插件设置里配置「工作台投递目录」（如 C:\\Users\\你的用户名\\Desktop\\OH-WorkSpace），或把项目工作台绑定到 Hana 可见的文件夹。',
+        error: '未找到工作台目录（自动探测返回 ' + (probeStatus || '空') + '）。请到插件设置里配置「工作台投递目录」（如 C:\\Users\\你的用户名\\Desktop\\工作台目录），或把项目工作台绑定到 Hana 可见的文件夹。',
       });
     }
 
