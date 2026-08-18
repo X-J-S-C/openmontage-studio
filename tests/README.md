@@ -11,6 +11,7 @@
   node tests/flow.test.mjs
   node tests/xss-audit.mjs
   node tests/artifact-guard.test.mjs
+  node tests/auth.test.mjs
 
 ## 覆盖
 

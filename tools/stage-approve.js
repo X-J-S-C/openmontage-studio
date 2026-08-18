@@ -1,6 +1,7 @@
 // OpenMontage Studio - 工具：验收通过（推进）(T4)
 import { loadProject, saveProject } from '../lib/store.js';
 import { approve } from '../lib/flow.js';
+import { assertStageGate } from '../lib/auth.js';
 
 export const name = 'stage_approve';
 export const description =
@@ -37,6 +38,9 @@ export async function execute(input, ctx) {
   if (!project) {
     return reply({ ok: false, error: '项目不存在: ' + input.projectId });
   }
+  const gate = await assertStageGate(ctx, project, input.stageId, "approve");
+  if (!gate.ok) return reply(gate);
+
   const result = approve(project, input.stageId, {
     suggestions: input.suggestions || [],
   });

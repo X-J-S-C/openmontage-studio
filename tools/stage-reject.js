@@ -1,6 +1,7 @@
 // OpenMontage Studio - 工具：验收不过（回退）(T4)
 import { loadProject, saveProject } from '../lib/store.js';
 import { reject } from '../lib/flow.js';
+import { assertStageGate } from '../lib/auth.js';
 
 export const name = 'stage_reject';
 export const description =
@@ -43,6 +44,9 @@ export async function execute(input, ctx) {
   if (!project) {
     return reply({ ok: false, error: '项目不存在: ' + input.projectId });
   }
+  const gate = await assertStageGate(ctx, project, input.stageId, "reject");
+  if (!gate.ok) return reply(gate);
+
   const result = reject(project, input.stageId, input.targetStageId, {
     mustFix: input.mustFix || [],
     suggestions: input.suggestions || [],
