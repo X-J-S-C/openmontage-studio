@@ -1,6 +1,7 @@
 // OpenMontage Studio - 前端交互 (T6 重写版)
 // 工位对话：tab 切换、消息渲染、发送、轮询；加载/空/错三态
-// 鉴权：pluginSurfaceSession 拼 query（与 biaoqingbao 同模式，无 SDK 依赖）
+// 鉴权：fetch 请求凭证走请求头 X-Hana-Plugin-Surface-Session（防 token 进 URL/日志）；
+// 仅 <img>/<video> 等无法自定义请求头的资源直链才回退到 query（宿主两者皆收）。
 
 (function () {
   'use strict';
