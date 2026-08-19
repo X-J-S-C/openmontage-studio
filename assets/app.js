@@ -401,7 +401,12 @@
     btn.disabled = true;
     btn.textContent = '发送中…';
     var box = $('threadText');
-    if (box) box.classList.add('thinking');
+    // 乐观渲染：用户消息立即上屏，不等服务端往返，消除“发了没反应/闪动”的错觉
+    if (box) {
+      box.classList.remove('thinking');
+      box.innerHTML = '<div class="ph" style="color:var(--ink);">我：' + esc(text) + '</div>' +
+        '<div class="err-hint" style="margin-top:8px;">等待工位回复…</div>';
+    }
 
     authFetch(API + '/api/thread/message', {
       method: 'POST',
@@ -644,7 +649,7 @@
 
   // 宿主 toast 提示（requiresGrant: false，页面可直接用）
   function hostToast(message, type) {
-    return pluginUiRequest('toast.show', { message: String(message), type: type || 'info', duration: 3000 }).catch(function () {});
+    return pluginUiRequest('toast.show', { message: String(message), type: type || 'info', duration: 5000 }).catch(function () {});
   }
 
   // ── 文件导入（页面按钮 → base64 → /api/import → 项目工作台）──
@@ -941,7 +946,7 @@
       loadThread(currentAgent, false);
       loadArtifacts();
       loadTasks();
-      pollTimer = setInterval(function () { loadThread(currentAgent, true); loadArtifacts(); loadTasks(); }, 5000);
+      pollTimer = setInterval(function () { loadThread(currentAgent, true); loadArtifacts(); loadTasks(); }, 8000);
     } else {
       renderError('未选择项目');
     }
