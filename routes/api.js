@@ -457,11 +457,12 @@ export function registerApiRoutes(app, ctx) {
       return json(c, { ok: false, error: 'bus 不可用' });
     }
 
+    let sessionId = null;
+    const contextText = buildProjectContext(project);
     try {
-      const sessionId = await ensureSession(pluginCtx, project, agentId);
+      sessionId = await ensureSession(pluginCtx, project, agentId);
       if (!sessionId) return json(c, { ok: false, error: '工位会话创建失败（Agent: ' + agentId + '）', hint: await agentSetupHint(pluginCtx) });
 
-      const contextText = buildProjectContext(project);
       const sent = await bus.request('session:send', {
         sessionId,
         text,
@@ -481,7 +482,6 @@ export function registerApiRoutes(app, ctx) {
           if (!sessionId2) {
             return json(c, { ok: false, error: '工位会话重建失败（Agent: ' + agentId + '）', hint: await agentSetupHint(pluginCtx) });
           }
-          const contextText = buildProjectContext(project);
           const sent2 = await bus.request('session:send', {
             sessionId: sessionId2,
             text,
@@ -501,12 +501,15 @@ export function registerApiRoutes(app, ctx) {
       }
       // 非 agent 类失败（宿主繁忙/超时/session-meta 过大等偶发问题）：自动重试一次，
       // 不扣“Agent 未就绪”的帽子，如实告知真实错误
+      if (!sessionId) {
+        return json(c, { ok: false, error: '发送失败: ' + msg });
+      }
       try {
         const retrySent = await bus.request('session:send', {
           sessionId,
           text,
           context: {
-            afterUser: [{ label: 'project-context', text: buildProjectContext(project) }],
+            afterUser: [{ label: 'project-context', text: contextText }],
           },
         });
         return json(c, { ok: true, sessionId, sent: retrySent, retried: true });
